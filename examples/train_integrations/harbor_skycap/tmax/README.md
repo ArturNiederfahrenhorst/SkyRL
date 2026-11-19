@@ -41,8 +41,8 @@ driver-side Harbor agent, like Terminus-2: it calls the model from the generator
 tool calls and runs each command in the sandbox with `environment.exec`. So it needs no `skycap.exposure` and
 installs nothing into the task's system. It reads parsed `tool_calls`, so the recipe sets
 `skycap.use_raw_content=false`: skycap parses each reply with the model's renderer instead of answering with raw
-text. When a prompt fills the context, skycap answers `context_length_exceeded`, Vanillux2 stops, and the trial
-trains with reward 0.
+text. When a prompt fills the context, skycap answers `context_length_exceeded`, which LiteLLM raises as a
+`BadRequestError`: Vanillux2 retries it five times (about 30 s), then stops, and the trial trains with reward 0.
 
 The recipe trains synchronously only. Vanillux2 takes no `llm_kwargs`, so the generator's prefix-cache salt
 never reaches skycap. That is a no-op here, because each synchronous weight sync resets vLLM's prefix cache,
