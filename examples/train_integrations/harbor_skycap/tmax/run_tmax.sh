@@ -99,15 +99,18 @@ ENGINE_INIT_KWARGS="${ENGINE_INIT_KWARGS:-}"
 SKYCAP_SERVERS="${SKYCAP_SERVERS:-1}"
 DATA_ROOT="${DATA_ROOT:-$HOME/data/tmax}"
 EVAL_DATA="${EVAL_DATA:-$DATA_ROOT/tblite}"
-# Tmax's harness, at the commit this recipe was validated with. Harbor and LiteLLM are pinned to SkyRL's lock in
-# the same overlay: tmax asks for an unpinned `harbor`, which would otherwise shadow SkyRL's. No spaces in these
+# Tmax's harness, at the commit this recipe was validated with. Harbor is pinned to SkyRL's lock in the same
+# overlay: tmax asks for an unpinned `harbor`, which would otherwise shadow SkyRL's. LiteLLM is newer than SkyRL's
+# lock (1.102.1), whose hosted_vllm provider drops `reasoning_content` from every assistant turn it sends back: a
+# thinking model's history would then differ from what it sampled at every turn, and each turn would fork skycap's
+# graph into a row of its own. 1.110.0 keeps it. No spaces in these
 # requirements: Ray rebuilds each worker's `uv run` command from this one by splitting on spaces, so
 # "tmax @ git+..." would reach the workers as `--with tmax` followed by a command named `@`.
 TMAX_REF="${TMAX_REF:-2c7f55e0e879cb16a21fe8cd6edbd08a976e43d3}"
 TMAX_WITH=(
   --with "git+https://github.com/hamishivi/tmax@$TMAX_REF"
   --with "harbor[daytona,modal]==0.14.0"
-  --with "litellm==1.102.1"
+  --with "litellm==1.110.0"
 )
 
 if [[ -d /mnt/cluster_storage ]]; then
