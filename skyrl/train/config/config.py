@@ -794,8 +794,10 @@ class MegatronConfig(BaseConfig):
     supports resharding along the data-parallel dimension. See
     https://github.com/NVIDIA/Megatron-LM/blob/core_v0.16.0/megatron/core/optimizer/distrib_optimizer.py"""
     freeze_moe_router: bool = False
-    """If True, freeze MoE router parameters so they are not updated during training. No-op on
-    non-MoE models."""
+    """If True, keep MoE routing fixed during training: the router weights get no gradient, and the
+    expert bias that DeepSeek-style routers use for load balancing (``e_score_correction_bias``) is
+    not updated after each step. Raises with quantile balancing in its ``micro_batch`` estimation
+    scope, whose routing bias Megatron updates regardless. No-op on non-MoE models."""
     freeze_dsa_indexer: bool = False
     """If True, freeze the dynamic-sparse-attention indexer parameters. The indexer emits top-k
     *indices*, which are not differentiable. With auxiliary indexer loss disabled, these parameters
