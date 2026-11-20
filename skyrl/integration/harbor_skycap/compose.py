@@ -17,10 +17,10 @@ trained token: everything before is prompt, and the loss mask says which of the
 rest the model sampled.
 
 The masking policy is the sibling's, from ``harbor/masking.py``: an instance
-with a failed rollout is masked whole, and so is one with at least
-``timeout_mask_instance_threshold`` timed-out rollouts; fewer timeouts mask only
-themselves. A trial that hit the context limit trains with its reward unless
-overlong filtering is on.
+with a failed rollout is masked whole, and so is one where at least
+``timeout_mask_instance_fraction`` of its rollouts timed out; below that, the
+timed-out rollouts mask only themselves. A trial that hit the context limit
+trains with its reward unless overlong filtering is on.
 
 With ``include_images``, each row carries its path's ``pixel_values`` and ``image_grid_thw``, its images in
 placeholder order. A row without images (a masked rollout's placeholder) carries zero-row tensors, as the
@@ -51,7 +51,7 @@ from skyrl.backends.skyrl_train.utils.sample_support import (
     CompactSampleSupport,
 )
 from skyrl.integration.harbor.masking import (
-    TIMEOUT_MASK_INSTANCE_THRESHOLD,
+    TIMEOUT_MASK_INSTANCE_FRACTION,
     mask_failed_trials,
 )
 from skyrl.train.generators.base import GeneratorOutput, TrajectoryID
@@ -131,7 +131,7 @@ def compose(
     outcomes: List[TrialOutcome],
     *,
     overlong_filtering: bool,
-    timeout_mask_instance_threshold: int = TIMEOUT_MASK_INSTANCE_THRESHOLD,
+    timeout_mask_instance_fraction: float = TIMEOUT_MASK_INSTANCE_FRACTION,
     top_k: int = -1,
     sample_support: bool = False,
     routed_experts: bool = False,
@@ -139,13 +139,13 @@ def compose(
 ) -> GeneratorOutput:
     """``top_k`` bounds sampler-support rows, as SkyRL's own capture does.
 
-    ``timeout_mask_instance_threshold`` is ``generator.timeout_mask_instance_threshold``.
+    ``timeout_mask_instance_fraction`` is ``generator.timeout_mask_instance_fraction``.
     ``sample_support`` says the engine returns sampler support, so a batch with nothing to train
     still carries (empty) support rows, as every other batch will. ``routed_experts`` says the same
     of routes (R3); every trained row must then have them. ``include_images`` adds each row's vision features.
     """
     masked, masking_counts = mask_failed_trials(
-        [(o.trajectory_id.instance_id, o.stop_reason) for o in outcomes], timeout_mask_instance_threshold
+        [(o.trajectory_id.instance_id, o.stop_reason) for o in outcomes], timeout_mask_instance_fraction
     )
 
     groups: List[List[_Row]] = []

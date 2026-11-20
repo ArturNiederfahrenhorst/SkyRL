@@ -7,22 +7,23 @@ Each generator classifies its trials by stop reason (``complete``, ``context_len
 from collections import defaultdict
 from typing import Dict, List, Sequence, Tuple
 
-#: Default for ``generator.timeout_mask_instance_threshold``.
-TIMEOUT_MASK_INSTANCE_THRESHOLD = 2
+#: Default for ``generator.timeout_mask_instance_fraction``: a group of 8 is masked at two timeouts.
+TIMEOUT_MASK_INSTANCE_FRACTION = 0.25
 
 
 def mask_failed_trials(
     trials: Sequence[Tuple[str, str]],
-    timeout_mask_instance_threshold: int = TIMEOUT_MASK_INSTANCE_THRESHOLD,
+    timeout_mask_instance_fraction: float = TIMEOUT_MASK_INSTANCE_FRACTION,
 ) -> Tuple[List[bool], Dict[str, int]]:
     """Which trials to mask, from each trial's ``(instance_id, stop_reason)``, and the counts for metrics.
 
     An instance with an ``error`` trial is masked whole: that trial was never measured, and an advantage estimator
     that compares an instance's trials with each other (``grpo``, ``rloo``, ``maxrl``) would count it as reward 0.
-    So is an instance with at least ``timeout_mask_instance_threshold`` ``agent_timeout`` trials, since several
-    timeouts in one group point at the task or the infrastructure rather than at one rollout. Fewer timeouts mask
-    only the timed-out trials, and the rest of the instance trains; those estimators still count a trial masked
-    alone as reward 0.
+    So is an instance where at least ``timeout_mask_instance_fraction`` of its trials are ``agent_timeout``, since
+    a group with that many timeouts points at the task or the infrastructure rather than at one rollout. Below it,
+    only the timed-out trials are masked and the rest of the instance trains; those estimators still count a trial
+    masked alone as reward 0. The fraction bounds that: masking k of n trials alone lowers the group's mean by k/n
+    of the trained trials' mean.
     """
     trials_of: Dict[str, List[int]] = defaultdict(list)
     for index, (instance_id, _) in enumerate(trials):
@@ -38,7 +39,9 @@ def mask_failed_trials(
     }
     for indices in trials_of.values():
         timeouts = [i for i in indices if trials[i][1] == "agent_timeout"]
-        if any(trials[i][1] == "error" for i in indices) or len(timeouts) >= timeout_mask_instance_threshold:
+        # A division, not ``fraction * len(indices)``: 7 / 25 == 0.28 but 0.28 * 25 > 7 in floating point.
+        too_many = bool(timeouts) and len(timeouts) / len(indices) >= timeout_mask_instance_fraction
+        if any(trials[i][1] == "error" for i in indices) or too_many:
             counts["num_masked_instances"] += 1
             to_mask = indices
         else:
