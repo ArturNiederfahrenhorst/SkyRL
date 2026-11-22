@@ -221,7 +221,7 @@ class HarborSkycapGenerator(GeneratorInterface):
             outcomes,
             overlong_filtering=self.generator_cfg.apply_overlong_filtering,
             mask_groups=phase != "eval",
-            timeout_mask_instance_threshold=self.generator_cfg.timeout_mask_instance_threshold,
+            timeout_mask_instance_fraction=self.generator_cfg.timeout_mask_instance_fraction,
             top_k=self.generator_cfg.sampling_params.top_k,
             sample_support=getattr(self.generator_cfg.inference_engine, "enable_return_sample_support_set", False),
             routed_experts=self._routed_experts,

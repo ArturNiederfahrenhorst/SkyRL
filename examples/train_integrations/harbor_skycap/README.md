@@ -256,9 +256,10 @@ What's imposed on every call:
 Masking is the sibling's, from the same function (`skyrl/integration/harbor/masking.py`):
 - **Failed rollout** (a sandbox that never started, no verifier result, a crash, nothing captured, or a
   trajectory skycap failed, e.g. on an unattributable prompt): the whole instance is masked.
-- **Agent timeout** (`AgentTimeoutError`, not retried): when at least `generator.timeout_mask_instance_threshold`
-  (default 2) trials of an instance time out, the whole instance is masked. Below that, only the timed-out
-  trials are, and the instance's other trials train. `1` masks the instance on any timeout.
+- **Agent timeout** (`AgentTimeoutError`, not retried): when at least `generator.timeout_mask_instance_fraction`
+  (default `0.25`: two of 8 trials, four of 16) of an instance's trials time out, the whole instance is masked.
+  Below that, only the timed-out trials are, and the instance's other trials train. `0` masks the instance on any
+  timeout; `1` masks only the timed-out trials.
 - **Context-length stop:** trains with reward 0, unless overlong filtering is on.
 
 Advantage estimators that compare an instance's trials (`grpo`, `rloo`, `maxrl`) still count a masked trial as

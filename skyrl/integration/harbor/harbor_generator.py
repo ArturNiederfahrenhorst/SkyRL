@@ -20,7 +20,7 @@ from skyrl.backends.skyrl_train.inference_servers.base import (
     InferenceEngineInterface,
 )
 from skyrl.integration.harbor.masking import (
-    TIMEOUT_MASK_INSTANCE_THRESHOLD,
+    TIMEOUT_MASK_INSTANCE_FRACTION,
     mask_failed_trials,
 )
 from skyrl.integration.harbor.trial_metrics import TrialAttempts, trial_metrics
@@ -68,7 +68,7 @@ class HarborTrajectoryOutput:
 def build_step_wise_generator_output(
     trajectory_outputs: List[HarborTrajectoryOutput],
     overlong_filtering: bool,
-    timeout_mask_instance_threshold: int = TIMEOUT_MASK_INSTANCE_THRESHOLD,
+    timeout_mask_instance_fraction: float = TIMEOUT_MASK_INSTANCE_FRACTION,
 ) -> GeneratorOutput:
     """Flatten per-trajectory rollout details into one entry per LLM turn.
 
@@ -87,7 +87,7 @@ def build_step_wise_generator_output(
             )
             for traj in trajectory_outputs
         ],
-        timeout_mask_instance_threshold,
+        timeout_mask_instance_fraction,
     )
 
     # 2. Walk trajectories and emit one entry of GeneratorOutput per step.
@@ -352,7 +352,7 @@ class HarborGenerator(GeneratorInterface):
         output = build_step_wise_generator_output(
             all_outputs,
             overlong_filtering=self.generator_cfg.apply_overlong_filtering,
-            timeout_mask_instance_threshold=self.generator_cfg.timeout_mask_instance_threshold,
+            timeout_mask_instance_fraction=self.generator_cfg.timeout_mask_instance_fraction,
         )
         output["rollout_metrics"].update(trial_metrics(all_attempts))
         return output
