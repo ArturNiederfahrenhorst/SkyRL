@@ -28,8 +28,9 @@ from skyrl.backends.skyrl_train.workers.megatron.model_bridges import (  # noqa:
     check_rope_override,
 )
 
-YARN = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 4096, "rope_theta": 1_000_000.0}
-YARN_ALL_KEYS = {**YARN, "beta_fast": 16.0, "beta_slow": 2.0, "mscale": 1.0, "mscale_all_dim": 1.0}
+# Values differ from every provider default (GPT and MLA), so each comparison can fail.
+YARN = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 1024, "rope_theta": 1_000_000.0}
+YARN_ALL_KEYS = {**YARN, "beta_fast": 16.0, "beta_slow": 2.0, "mscale": 2.0, "mscale_all_dim": 1.0}
 GPT_OSS_YARN = {
     "rope_type": "yarn",
     "factor": 32.0,
@@ -101,6 +102,9 @@ def _bridge(config, tmp_path):
         ),
         pytest.param(_llama, LINEAR, None, id="llama-linear"),
         pytest.param(_llama, LLAMA3, None, id="llama-llama3"),
+        pytest.param(
+            _llama, {**LLAMA3, "low_freq_factor": 2.0}, "Unsupported llama3 RoPE scaling values", id="llama3-unfixed"
+        ),
         pytest.param(_qwen2, LINEAR, "Qwen2Bridge does not translate it", id="qwen2-linear-dropped"),
         pytest.param(_qwen2, {"rope_type": "dynamic", "factor": 2.0}, "'dynamic' is not supported", id="unknown-type"),
         pytest.param(_qwen2, {"rope_type": "yarn", "rope_theta": 1_000_000.0}, "needs a 'factor'", id="no-factor"),
@@ -124,14 +128,16 @@ def _bridge(config, tmp_path):
 def test_rope_override_reaches_the_provider_or_raises(tmp_path, make_config, override, match):
     bridge = _bridge(make_config(), tmp_path)
     apply_rope_override(bridge.hf_pretrained.config, override)
-    provider = bridge.to_megatron_provider(load_weights=False)
-    bridge_name = type(bridge._model_bridge).__name__
+
+    def build_and_check():
+        provider = bridge.to_megatron_provider(load_weights=False)
+        check_rope_override(provider, override, type(bridge._model_bridge).__name__)
 
     if match is None:
-        check_rope_override(provider, override, bridge_name)
+        build_and_check()
     else:
         with pytest.raises(ValueError, match=match):
-            check_rope_override(provider, override, bridge_name)
+            build_and_check()
 
 
 def _bridge_with_top_level_rope_theta(tmp_path):
