@@ -22,7 +22,8 @@
 #                              override skycap.exposure.* for more); needs GENERATOR=skycap, and
 #                              defaults to STRATEGY=megatron and 2400 s per trial; trains with the
 #                              prompt-mean loss, and gives Codex codecontests_codex_instructions.md
-#                              as its AGENTS.md
+#                              as its AGENTS.md; on Megatron it fuses the LM head into the log-prob
+#                              computation and empties the CUDA cache, to fit 32k-token batches
 #   NUM_TASKS                  training tasks (default NUM_PROMPTS)
 #   NUM_PROMPTS, GROUP_SIZE    tasks per step and samples per task (default 32 x 8); NUM_PROMPTS is
 #                              capped at NUM_TASKS
@@ -187,6 +188,15 @@ case "$STRATEGY" in
       trainer.policy.megatron_config.transformer_config_kwargs.recompute_method=uniform
       trainer.policy.megatron_config.transformer_config_kwargs.recompute_num_layers=1
     )
+    if [[ "$AGENT" == codex ]]; then
+      # Codex's step-wise batches (around 100 rows of 32k tokens per step) ran out of GPU memory at
+      # step 1 on Qwen3-8B and 2 H100s without these: the fused LM head never materializes the full
+      # logits, and emptying the CUDA cache before the optimizer step returns fragmented memory.
+      STRATEGY_ARGS+=(
+        trainer.fused_lm_head_logprob=true
+        trainer.policy.megatron_config.empty_cuda_cache=true
+      )
+    fi
     if [[ "$OPTIMIZER_OFFLOAD" == 1 ]]; then
       STRATEGY_ARGS+=(
         trainer.policy.megatron_config.optimizer_config_kwargs.optimizer_cpu_offload=true

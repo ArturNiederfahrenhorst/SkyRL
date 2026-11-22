@@ -160,7 +160,11 @@ how to create a file with `apply_patch`, to run the solution on the example,
 and to act through tool calls, the most common ways Codex's trials failed on
 CodeContests. With `AGENT=codex` it also trains with
 `trainer.algorithm.loss_reduction=prompt_mean`, so a task whose trials loop
-for a hundred turns doesn't take most of the update.
+for a hundred turns doesn't take most of the update. On Megatron it sets
+`trainer.fused_lm_head_logprob=true` and
+`trainer.policy.megatron_config.empty_cuda_cache=true`: without them, Codex's
+batches of about 100 rows of 32k tokens ran out of GPU memory at step 1 on
+Qwen3-8B and 2 H100s.
 
 ## Sharing a sandbox provider
 
