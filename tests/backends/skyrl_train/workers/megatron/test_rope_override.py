@@ -14,10 +14,12 @@ pytest.importorskip("megatron.bridge", reason="requires the megatron extra")
 
 pytestmark = pytest.mark.megatron
 
+from loguru import logger  # noqa: E402
 from megatron.bridge import AutoBridge  # noqa: E402
 from transformers import (  # noqa: E402
     AutoConfig,
     DeepseekV3Config,
+    Glm4MoeConfig,
     GptOssConfig,
     LlamaConfig,
     Qwen2Config,
@@ -79,6 +81,14 @@ def _gpt_oss():
     )  # fmt: skip
 
 
+def _glm4_moe():
+    return Glm4MoeConfig(
+        num_attention_heads=4, num_key_value_heads=2, head_dim=16, n_routed_experts=4, num_experts_per_tok=2,
+        n_shared_experts=1, moe_intermediate_size=32, first_k_dense_replace=1, n_group=1, topk_group=1,
+        architectures=["Glm4MoeForCausalLM"], **_TINY,
+    )  # fmt: skip
+
+
 def _bridge(config, tmp_path):
     # The call init_configs makes; weights load lazily and to_megatron_provider(load_weights=False) never asks.
     config.save_pretrained(tmp_path)
@@ -100,10 +110,29 @@ def _bridge(config, tmp_path):
             "GPTOSSBridge does not translate it",
             id="gpt-oss-overwritten",
         ),
+        pytest.param(_glm4_moe, YARN, "rotates 50% of each attention head", id="glm4-moe-yarn-partial-rotary"),
+        pytest.param(
+            _glm4_moe,
+            {"rope_type": "default", "rope_theta": 500_000.0, "partial_rotary_factor": 0.5},
+            None,
+            id="glm4-moe-theta-restating-partial-rotary",
+        ),
+        pytest.param(
+            _glm4_moe,
+            {"rope_type": "default", "rope_theta": 500_000.0, "partial_rotary_factor": 1.0},
+            "GLM45Bridge does not translate it",
+            id="glm4-moe-partial-rotary-changed",
+        ),
         pytest.param(_llama, LINEAR, None, id="llama-linear"),
         pytest.param(_llama, LLAMA3, None, id="llama-llama3"),
         pytest.param(
             _llama, {**LLAMA3, "low_freq_factor": 2.0}, "Unsupported llama3 RoPE scaling values", id="llama3-unfixed"
+        ),
+        pytest.param(
+            _llama,
+            {"rope_type": "llama3", "factor": 16.0, "rope_theta": 500_000.0},
+            "needs 'low_freq_factor', 'high_freq_factor', 'original_max_position_embeddings'",
+            id="llama3-no-fixed-keys",
         ),
         pytest.param(_qwen2, LINEAR, "Qwen2Bridge does not translate it", id="qwen2-linear-dropped"),
         pytest.param(_qwen2, {"rope_type": "dynamic", "factor": 2.0}, "'dynamic' is not supported", id="unknown-type"),
@@ -138,6 +167,23 @@ def test_rope_override_reaches_the_provider_or_raises(tmp_path, make_config, ove
     else:
         with pytest.raises(ValueError, match=match):
             build_and_check()
+
+
+@pytest.mark.parametrize(
+    "make_config, override, warns",
+    [pytest.param(_qwen2, YARN, False, id="verified"), pytest.param(_llama, LINEAR, True, id="unverified")],
+)
+def test_rope_override_without_a_parity_result_warns(tmp_path, make_config, override, warns):
+    bridge = _bridge(make_config(), tmp_path)
+    apply_rope_override(bridge.hf_pretrained.config, override)
+    provider = bridge.to_megatron_provider(load_weights=False)
+    messages = []
+    sink = logger.add(messages.append, level="WARNING")
+    try:
+        check_rope_override(provider, override, type(bridge._model_bridge).__name__)
+    finally:
+        logger.remove(sink)
+    assert any("best-effort" in message for message in messages) == warns
 
 
 def _bridge_with_top_level_rope_theta(tmp_path):

@@ -676,7 +676,10 @@ class MegatronConfig(BaseConfig):
     https://github.com/NVIDIA/Megatron-LM/blob/core_r0.13.0/megatron/core/transformer/transformer_config.py
     ``rope_parameters`` is the one HuggingFace config key read here (the Megatron counterpart of FSDP's
     ``model_config_kwargs.rope_parameters``): it is applied to the HF config Megatron-Bridge translates, it
-    must include ``rope_theta``, and startup fails if the model's bridge cannot apply its ``rope_type``.
+    must include ``rope_theta``, and startup fails if the model's bridge cannot apply it. Models whose
+    Megatron-vs-vLLM logprobs have not been checked with an override (see ``_VERIFIED_ROPE_OVERRIDES`` in
+    ``skyrl/backends/skyrl_train/workers/megatron/model_bridges.py``: Qwen2/Qwen3 dense, Qwen3-MoE YaRN and
+    DeepSeek-V3-architecture YaRN so far) get it on a best-effort basis, with a warning at startup.
 
     FP8 training is configured through the top-level ``fp8``, ``fp8_recipe``, ``fp8_param``, and
     ``fp8_amax_compute_algo`` fields above, which fold into these kwargs; setting the same keys

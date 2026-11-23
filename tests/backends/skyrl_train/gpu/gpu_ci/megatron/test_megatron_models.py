@@ -198,6 +198,7 @@ def get_test_actor_config(model_name) -> SkyRLTrainConfig:
         or ("kimi-k2.5" in model_name.lower())
         or ("qwen3.8-flash-next" in model_name.lower())
         or ("kimi-k3" in model_name.lower())
+        or ("moonlight" in model_name.lower())
     )
     if is_large_moe:
         cfg.trainer.policy.inference_only_init = True
@@ -1273,20 +1274,38 @@ async def test_logprobs_matching_roundtrip(
             ), f"Logprob diff should be less than {vllm_threshold}, but is {logprobs_diff.mean().item():.6f}"
 
 
+# Every override moves rope_theta to 1e4 (from Qwen's 1e6 and Moonlight's 5e4), so a trainer that ignores it misses
+# the bound by far; the YaRN rows add a x4 context extension on top.
+_THETA_1E4 = {"rope_type": "default", "rope_theta": 10000.0}
+_YARN_X4_32K = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 32768, "rope_theta": 10000.0}
+
+
 @pytest.mark.asyncio
 @pytest.mark.megatron_models
-async def test_logprobs_matching_roundtrip_with_rope_override(tmp_path):
+@pytest.mark.parametrize(
+    "tp,ep,etp,num_gpus,model_name,megatron_threshold,rope_parameters",
+    [
+        pytest.param(2, 1, None, 2, "Qwen/Qwen3-0.6B", 5e-2, _THETA_1E4, id="qwen3-theta"),
+        pytest.param(2, 1, None, 2, "Qwen/Qwen3-0.6B", 5e-2, _YARN_X4_32K, id="qwen3-yarn"),
+        pytest.param(2, 1, None, 2, "Qwen/Qwen2.5-0.5B-Instruct", 5e-2, _THETA_1E4, id="qwen2-theta"),
+        pytest.param(2, 1, None, 2, "Qwen/Qwen2.5-0.5B-Instruct", 5e-2, _YARN_X4_32K, id="qwen2-yarn"),
+        pytest.param(2, 2, 1, 4, "eatang/qwen3-moe-tiny-random", 2e-1, _YARN_X4_32K, id="qwen3-moe-yarn"),
+        pytest.param(
+            4, 4, 1, 4, "moonshotai/Moonlight-16B-A3B-Instruct", 5e-2,
+            {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 8192, "rope_theta": 10000.0},
+            id="moonlight-mla-yarn", marks=pytest.mark.h100,
+        ),
+    ],
+)  # fmt: skip
+async def test_logprobs_matching_roundtrip_with_rope_override(
+    tmp_path, tp, ep, etp, num_gpus, model_name, megatron_threshold, rope_parameters
+):
     """The same RoPE override on vLLM and on the Megatron trainer gives matching logprobs (#2753).
 
-    Real weights and the real-weights bound (5e-2). The override moves rope_theta from Qwen3's 1e6 to 1e4 and adds
-    YaRN x4, so a trainer that ignores it, as before #2735, misses the bound by far.
+    One row per (Megatron-Bridge bridge, rope_type) pair in ``model_bridges._VERIFIED_ROPE_OVERRIDES``; a pair is
+    added there only with a row here. Real weights are held to the real-weights bound (5e-2).
     """
     await test_logprobs_matching_roundtrip(
-        2, 1, 1, 1, None, 2, 2, "Qwen/Qwen3-0.6B", 1e-1, 5e-2, None, None, tmp_path,
-        rope_parameters={
-            "rope_type": "yarn",
-            "factor": 4.0,
-            "original_max_position_embeddings": 32768,
-            "rope_theta": 10000.0,
-        },
+        tp, 1, 1, ep, etp, tp, num_gpus, model_name, 1e-1, megatron_threshold, None, None, tmp_path,
+        rope_parameters=rope_parameters,
     )  # fmt: skip
