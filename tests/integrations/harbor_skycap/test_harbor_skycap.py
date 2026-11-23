@@ -16,6 +16,7 @@ pytest.importorskip("harbor")
 import aiohttp  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from aiohttp.test_utils import TestServer  # noqa: E402
+from harbor.models.trial.config import TrialConfig  # noqa: E402
 
 from examples.train_integrations.harbor.entrypoints.main_harbor import (
     HARBOR_DEFAULT_CONFIG,  # noqa: E402
@@ -167,11 +168,13 @@ async def generator(skycap):
     """Makes generators against the test's skycap, and closes each one's pool when the test ends."""
     made = []
 
-    def make(train_paths: str = "all", check_first_batch: bool = True, **cfg) -> HarborSkycapGenerator:
+    def make(
+        train_paths: str = "all", check_first_batch: bool = True, harbor: dict | None = None, **cfg
+    ) -> HarborSkycapGenerator:
         made.append(
             HarborSkycapGenerator(
                 generator_cfg(**cfg),
-                harbor_cfg(),
+                harbor_cfg() if harbor is None else harbor,
                 [skycap.url],
                 SimpleNamespace(weight_version=7),
                 train_paths=train_paths,
@@ -521,6 +524,17 @@ async def test_the_first_training_batch_with_nothing_to_train_stops_the_run(
     else:
         out = await gen.generate(phased(phase, *last), disable_tqdm=True)
         assert len(out["trajectory_ids"]) == len(last)
+
+
+@pytest.mark.asyncio
+async def test_with_no_trials_dir_in_the_template_the_first_batch_error_names_harbors_default(
+    skycap, trials, generator
+) -> None:
+    template = harbor_cfg()
+    del template["trials_dir"]
+    default = re.escape(str(TrialConfig.model_fields["trials_dir"].default))
+    with pytest.raises(RuntimeError, match=rf"logs are under {default}\. "):
+        await generator(harbor=template).generate(batch("silent"), disable_tqdm=True)
 
 
 def test_a_batch_with_nothing_to_train_still_carries_padded_support() -> None:
