@@ -1940,13 +1940,23 @@ class TrainerConfig(BaseConfig):
         if self.ref.model.path is None:
             self.ref.model.path = self.policy.model.path
 
-        # The reference model scores the same tokens as the policy, so it takes the policy's RoPE override; a
-        # different one would make the KL term measure the RoPE difference instead of policy drift.
+        # The reference model scores the same tokens as the policy, so when it is the same model it takes the policy's
+        # RoPE override; a different one would make the KL term measure the RoPE difference instead of policy drift.
         if self.strategy == "megatron":
             policy_rope = self.policy.megatron_config.transformer_config_kwargs.get("rope_parameters")
             ref_kwargs = self.ref.megatron_config.transformer_config_kwargs
             ref_rope = ref_kwargs.get("rope_parameters")
-            if ref_rope is None:
+            same_model = self.ref.model.path == self.policy.model.path
+            uses_ref_model = self.algorithm.use_kl_loss or self.algorithm.use_kl_in_reward
+            if not same_model:
+                if uses_ref_model and policy_rope is not None and ref_rope is None:
+                    raise ValueError(
+                        "trainer.ref.model.path is a different model than trainer.policy.model.path, so it does not "
+                        "inherit trainer.policy.megatron_config.transformer_config_kwargs.rope_parameters: set "
+                        "trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters to the policy's "
+                        "override (another copy of the same model) or to the reference checkpoint's own RoPE."
+                    )
+            elif ref_rope is None:
                 if policy_rope is not None:
                     ref_kwargs["rope_parameters"] = copy.deepcopy(policy_rope)
             elif ref_rope != policy_rope:
@@ -1954,7 +1964,7 @@ class TrainerConfig(BaseConfig):
                 raise ValueError(
                     "trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters must match "
                     "trainer.policy.megatron_config.transformer_config_kwargs.rope_parameters (or be unset, to "
-                    "inherit it): the reference model scores the same tokens as the policy."
+                    "inherit it): the reference model is the policy's model and scores the same tokens."
                 )
 
         if self.log_example_interval > 0:

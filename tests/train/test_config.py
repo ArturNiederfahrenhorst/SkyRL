@@ -936,6 +936,37 @@ def test_megatron_ref_rope_override_must_match_the_policy(policy_overrides):
         )
 
 
+_OTHER_REF_MODEL = ["trainer.policy.model.path=Qwen/Qwen3-0.6B", "trainer.ref.model.path=Qwen/Qwen3-1.7B"]
+_REF_OWN_ROPE = {"rope_type": "default", "rope_theta": 10000.0}
+
+
+def test_megatron_ref_of_another_model_must_set_its_own_rope():
+    with pytest.raises(ValueError, match="different model than trainer.policy.model.path, so it does not inherit"):
+        SkyRLTrainConfig.from_cli_overrides(["trainer.strategy=megatron", *_MEGATRON_YARN_OVERRIDES, *_OTHER_REF_MODEL])
+
+
+@pytest.mark.parametrize(
+    "extra_overrides, expected_ref_rope",
+    [
+        pytest.param(
+            [
+                f"trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters.{k}={v}"
+                for k, v in _REF_OWN_ROPE.items()
+            ],
+            _REF_OWN_ROPE,
+            id="own-rope",
+        ),
+        pytest.param(["trainer.algorithm.use_kl_loss=false"], None, id="no-kl"),
+    ],
+)
+def test_megatron_ref_of_another_model_keeps_its_own_rope(extra_overrides, expected_ref_rope):
+    cfg = SkyRLTrainConfig.from_cli_overrides(
+        ["trainer.strategy=megatron", *_MEGATRON_YARN_OVERRIDES, *_OTHER_REF_MODEL, *extra_overrides]
+    )
+
+    assert cfg.trainer.ref.megatron_config.transformer_config_kwargs.get("rope_parameters") == expected_ref_rope
+
+
 def test_hf_overrides_rope_parameters_must_match_fsdp_trainer_side_override():
     with pytest.raises(
         ValueError,
