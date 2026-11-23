@@ -352,6 +352,10 @@ def _engine_overrides_for_model(model_name: str, fp8_mode: str | None = None) ->
         # to the colocated Megatron shard.
         overrides["engine_init_kwargs"]["max_model_len"] = 4096
         overrides["gpu_memory_utilization"] = 0.5
+    if "moonlight" in model_name.lower():
+        # At the default 0.9, vLLM's ~60 GiB KV pool per H100 cannot come back on wake-up once the colocated
+        # Megatron shard is resident (CUDA OOM in wake_up(kv_cache) on 4xH100).
+        overrides["gpu_memory_utilization"] = 0.5
     return overrides
 
 
