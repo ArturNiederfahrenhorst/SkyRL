@@ -366,6 +366,16 @@ def _expected_rope_fields(provider, rope_parameters: dict) -> dict:
             "Megatron Core's YaRN embedding rotates the whole head, so the trainer and vLLM would use different "
             "positions."
         )
+    # Megatron Core takes YaRN's mscale / mscale_all_dim ratio unless either is None (yarn_rotary_pos_embedding.py:290),
+    # vLLM's GPT YaRN only when both are truthy (yarn.py:40), and Megatron-Bridge passes a 0 through.
+    if rope_type == "yarn" and not mla and {"mscale", "mscale_all_dim"} <= set(rope_parameters):
+        if not (rope_parameters["mscale"] and rope_parameters["mscale_all_dim"]):
+            raise ValueError(
+                f"transformer_config_kwargs.rope_parameters with rope_type='yarn' sets mscale="
+                f"{rope_parameters['mscale']} and mscale_all_dim={rope_parameters['mscale_all_dim']}: with either at 0, "
+                "Megatron Core and vLLM scale the attention differently for this model. Leave both out, or set both "
+                "to non-zero values."
+            )
     expected = {field: rope_parameters[key] for key, field in fields.items() if field and key in rope_parameters}
     if not mla:
         expected.update(_GPT_ROPE_MODES.get(rope_type, {}))
