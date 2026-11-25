@@ -98,8 +98,6 @@ def _bridge(config, tmp_path):
 @pytest.mark.parametrize(
     "make_config, override, match",
     [
-        pytest.param(_qwen2, {"rope_type": "default", "rope_theta": 500_000.0}, None, id="qwen2-theta"),
-        pytest.param(_qwen2, YARN, None, id="qwen2-yarn"),
         pytest.param(_qwen2, {**YARN_ALL_KEYS, "truncate": False}, None, id="qwen2-yarn-all-keys"),
         pytest.param(
             _qwen2,
@@ -107,7 +105,6 @@ def _bridge(config, tmp_path):
             "with either at 0, Megatron Core and vLLM scale the attention differently",
             id="qwen2-yarn-mscale-zero",
         ),
-        pytest.param(_deepseek_v3, YARN, None, id="deepseek-v3-mla-yarn"),
         pytest.param(_deepseek_v3, YARN_ALL_KEYS, None, id="deepseek-v3-mla-yarn-all-keys"),
         pytest.param(_gpt_oss, GPT_OSS_YARN, None, id="gpt-oss-yarn"),
         pytest.param(

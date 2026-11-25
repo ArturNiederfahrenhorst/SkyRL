@@ -914,56 +914,48 @@ _MEGATRON_YARN_OVERRIDES = [
 ]
 
 
-def test_megatron_ref_inherits_the_policy_rope_override():
-    cfg = SkyRLTrainConfig.from_cli_overrides(["trainer.strategy=megatron", *_MEGATRON_YARN_OVERRIDES])
-
-    assert (
-        cfg.trainer.ref.megatron_config.transformer_config_kwargs["rope_parameters"]
-        == cfg.trainer.policy.megatron_config.transformer_config_kwargs["rope_parameters"]
-    )
-
-
-@pytest.mark.parametrize("policy_overrides", [_MEGATRON_YARN_OVERRIDES, []], ids=["different", "ref-only"])
-def test_megatron_ref_rope_override_must_match_the_policy(policy_overrides):
-    with pytest.raises(ValueError, match="trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters"):
-        SkyRLTrainConfig.from_cli_overrides(
-            [
-                "trainer.strategy=megatron",
-                *policy_overrides,
-                "trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters.rope_type=default",
-                "trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters.rope_theta=10000.0",
-            ]
-        )
-
-
-_OTHER_REF_MODEL = ["trainer.policy.model.path=Qwen/Qwen3-0.6B", "trainer.ref.model.path=Qwen/Qwen3-1.7B"]
+_POLICY_YARN = {"rope_type": "yarn", "factor": 2.0, "rope_theta": 1000000.0}
 _REF_OWN_ROPE = {"rope_type": "default", "rope_theta": 10000.0}
-
-
-def test_megatron_ref_of_another_model_must_set_its_own_rope():
-    with pytest.raises(ValueError, match="different model than trainer.policy.model.path, so it does not inherit"):
-        SkyRLTrainConfig.from_cli_overrides(["trainer.strategy=megatron", *_MEGATRON_YARN_OVERRIDES, *_OTHER_REF_MODEL])
+_REF_ROPE_OVERRIDES = [
+    f"trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters.{k}={v}" for k, v in _REF_OWN_ROPE.items()
+]
+_OTHER_REF_MODEL = ["trainer.policy.model.path=Qwen/Qwen3-0.6B", "trainer.ref.model.path=Qwen/Qwen3-1.7B"]
+_REF_MUST_MATCH = "trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters must match"
 
 
 @pytest.mark.parametrize(
-    "extra_overrides, expected_ref_rope",
+    "overrides, expected_ref_rope, match",
     [
+        pytest.param(_MEGATRON_YARN_OVERRIDES, _POLICY_YARN, None, id="same-model-inherits"),
         pytest.param(
-            [
-                f"trainer.ref.megatron_config.transformer_config_kwargs.rope_parameters.{k}={v}"
-                for k, v in _REF_OWN_ROPE.items()
-            ],
-            _REF_OWN_ROPE,
-            id="own-rope",
+            [*_MEGATRON_YARN_OVERRIDES, *_REF_ROPE_OVERRIDES], None, _REF_MUST_MATCH, id="same-model-different"
         ),
-        pytest.param(["trainer.algorithm.use_kl_loss=false"], None, id="no-kl"),
+        pytest.param(_REF_ROPE_OVERRIDES, None, _REF_MUST_MATCH, id="same-model-ref-only"),
+        pytest.param(
+            [*_MEGATRON_YARN_OVERRIDES, *_OTHER_REF_MODEL], None, "so it does not inherit", id="other-model-unset"
+        ),
+        pytest.param(
+            [*_MEGATRON_YARN_OVERRIDES, *_OTHER_REF_MODEL, *_REF_ROPE_OVERRIDES],
+            _REF_OWN_ROPE,
+            None,
+            id="other-model-own-rope",
+        ),
+        pytest.param(
+            [*_MEGATRON_YARN_OVERRIDES, *_OTHER_REF_MODEL, "trainer.algorithm.use_kl_loss=false"],
+            None,
+            None,
+            id="other-model-no-ref-model",
+        ),
     ],
 )
-def test_megatron_ref_of_another_model_keeps_its_own_rope(extra_overrides, expected_ref_rope):
-    cfg = SkyRLTrainConfig.from_cli_overrides(
-        ["trainer.strategy=megatron", *_MEGATRON_YARN_OVERRIDES, *_OTHER_REF_MODEL, *extra_overrides]
-    )
+def test_megatron_ref_rope_parameters(overrides, expected_ref_rope, match):
+    args = ["trainer.strategy=megatron", *overrides]
+    if match is not None:
+        with pytest.raises(ValueError, match=match):
+            SkyRLTrainConfig.from_cli_overrides(args)
+        return
 
+    cfg = SkyRLTrainConfig.from_cli_overrides(args)
     assert cfg.trainer.ref.megatron_config.transformer_config_kwargs.get("rope_parameters") == expected_ref_rope
 
 
