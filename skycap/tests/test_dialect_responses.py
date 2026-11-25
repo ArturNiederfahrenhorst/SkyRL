@@ -205,11 +205,12 @@ def test_a_tool_neither_function_nor_custom_is_refused_by_type_and_position(kind
             {"format": {"type": "grammar", "syntax": "regex", "definition": "x+"}},
             "The input follows this regex grammar:\nx+",
         ),
+        ({}, None),
     ],
-    ids=["no format", "text", "grammar", "grammar, no description"],
+    ids=["no format", "text", "grammar", "grammar, no description", "no description"],
 )
 def test_a_custom_tool_is_a_function_of_one_string_with_its_grammar_in_the_description(
-    fields: dict, description: str
+    fields: dict, description: str | None
 ) -> None:
     tools = [{"type": "custom", "name": "apply_patch", **fields}]
 

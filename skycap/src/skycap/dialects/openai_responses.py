@@ -12,12 +12,15 @@ else starts one. Items with a role are turns of that role, and ``instructions``
 is a leading ``system`` turn. (Note that later on in the renderer, ``developer``
 role items may be converted to ``system`` role items.)
 
-A ``custom`` tool, whose input is one raw string, is shown to the model as vLLM
-shows it: a function of one string parameter, ``input``. A grammar on it is
-appended to the description: nothing enforces it while sampling, and vLLM,
-which refuses grammar tools, has no rule to follow. A ``custom_tool_call``
-regroups like a ``function_call``, as the call of that function with its input
-under ``input``, and a ``custom_tool_call_output`` is a ``tool`` turn.
+A ``custom`` tool, whose input is one raw string, is shown to the model with
+vLLM's shim (``custom_tool_as_function_dict``): a function of one string
+parameter, ``input``. A grammar on it is appended to the description as text and
+is not enforced while sampling. vLLM v0.33.0 refuses custom tools with a grammar,
+so a prompt with one has no vLLM counterpart. A ``custom_tool_call`` regroups
+like a ``function_call``, as the call of that function with its input under
+``input`` (spelled compactly, as ``renderer.parse`` spells arguments, where vLLM
+uses ``json.dumps``'s default separators), and a ``custom_tool_call_output`` is
+a ``tool`` turn.
 
 skycap is stricter than vLLM where vLLM would drop part of the input and so
 change what the model sees: a tool that is neither a function nor a custom
@@ -475,18 +478,17 @@ def _tools(tools: Any) -> list[dict[str, Any]] | None:
 
 
 def _custom_function(tool: dict[str, Any], where: str) -> dict[str, Any]:
-    """A custom tool as vLLM v0.33.0 shows it (``custom_tool_as_function_dict``): a function of one string,
-    ``input``, with any grammar appended to the description."""
-    description = tool.get("description") or ""
-    if not isinstance(description, str):
+    """A custom tool as vLLM v0.33.0's ``custom_tool_as_function_dict`` shows it: a function of one string,
+    ``input``, with the tool's description, null when it has none. A grammar, which vLLM refuses, is appended
+    to the description."""
+    description = tool.get("description")
+    if description is not None and not isinstance(description, str):
         raise RequestError(f"`{where}.description` must be a string")
     form = tool.get("format") or {"type": "text"}
     if not isinstance(form, dict):
         raise RequestError(f'`{where}.format` must be an object, such as {{"type": "text"}}')
     kind = form.get("type")
-    # Nothing enforces a grammar while sampling, and a client's prompt may never spell the format out, so the
-    # description is the only place the model can learn it. Dropping the grammar would change what the model
-    # sees without saying so; vLLM, which this dialect otherwise follows, refuses grammar tools instead.
+    # The grammar goes into the description as text; sampling does not enforce it.
     if kind == "grammar":
         syntax, definition = form.get("syntax"), form.get("definition")
         if not isinstance(syntax, str) or not isinstance(definition, str):
@@ -495,9 +497,7 @@ def _custom_function(tool: dict[str, Any], where: str) -> dict[str, Any]:
         description = f"{description}\n\n{grammar}" if description else grammar
     elif kind != "text":
         raise RequestError(f"`{where}.format` of type {kind!r} is not supported: send `text` or `grammar`")
-    function: dict[str, Any] = {"name": tool["name"]}
-    if description:
-        function["description"] = description
+    function: dict[str, Any] = {"name": tool["name"], "description": description}
     function["parameters"] = {
         "type": "object",
         "properties": {CUSTOM_INPUT: {"type": "string", "description": "The freeform text payload for this tool."}},
@@ -572,9 +572,8 @@ def _custom_names(call: CallRequest) -> frozenset[str]:
 
 def _custom_input(arguments: str) -> str:
     """The ``input`` of a sampled call to a custom tool's function, as vLLM decodes it
-    (``decode_custom_tool_input``): the string under ``input``, else the arguments as they are."""
-    # Malformed arguments are passed through, not refused: the client answers the call with its own error, which
-    # the model can learn from. Refusing would fail a call whose turn was already sampled and committed.
+    (``decode_custom_tool_input``): the string under ``input``, else the arguments as they are, malformed
+    or not."""
     try:
         parsed = json.loads(arguments)
     except ValueError:
