@@ -226,7 +226,8 @@ async def test_a_raw_content_server_answers_responses_parsed_and_chat_raw() -> N
         chat = await client(chatted["base_url"]).chat.completions.create(
             model="policy", messages=[user("use a TOOL")], tools=CHAT_TOOLS
         )
-        chat_calls = [c for n in (await document(stack, chatted["id"]))["nodes"] for c in n["calls"]]
+        chatted_document = await document(stack, chatted["id"])
+        chat_calls = [c for n in chatted_document["nodes"] for c in n["calls"]]
 
     assert [item.type for item in replies[0].output] == ["reasoning", "function_call"]
     assert finished["unbridged_calls"] == 0 and len(finished["samples"]) == 1
@@ -237,6 +238,8 @@ async def test_a_raw_content_server_answers_responses_parsed_and_chat_raw() -> N
     assert [c["raw_content"] for c in responses_calls] == [False] * 3 and [c["raw_content"] for c in chat_calls] == [
         True
     ]
+    assert chatted_document["capture"]["use_raw_content"] is True
+    assert chatted_document["capture"]["raw_content_dialects"] == ["openai_chat"]
 
 
 async def test_the_responses_route_takes_the_trajectorys_own_key() -> None:

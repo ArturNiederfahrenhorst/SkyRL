@@ -101,7 +101,7 @@ The decompressed document is a UTF-8 JSON object:
 | `status` | string | `finished`, `failed`, `abandoned` (idle past the TTL) or `open` (written at shutdown) |
 | `ended` | bool | whether the trajectory was ended (by `finish` or the TTL). False for one written at shutdown, which may be sealed as `failed` and still waiting for its finish |
 | `meta` | object | what the creator passed at create |
-| `capture` | object | how it was captured: `mode` (`text` or `tokens`), and for tokens the `engine`, `tokenizer`, `logprobs_mode` (`processed_logprobs` means logprobs are over the truncated, renormalized distribution), any `sampling_overrides`, and `use_raw_content` (the server's setting: whether replies on an API that can carry raw text, Chat Completions, give the completion's own text as `content`, with no reasoning or tool-call parsing; each call's `raw_content` records what it got) |
+| `capture` | object | how it was captured: `mode` (`text` or `tokens`), and for tokens the `engine`, `tokenizer`, `logprobs_mode` (`processed_logprobs` means logprobs are over the truncated, renormalized distribution), any `sampling_overrides`, and `use_raw_content` (the server's setting: whether replies on an API that can carry raw text, Chat Completions, give the completion's own text as `content`, with no reasoning or tool-call parsing; each call's `raw_content` records what it got), and `raw_content_dialects`, the APIs whose replies are raw on this server (`["openai_chat"]` with `use_raw_content`, else `[]`; absent in records written before it) |
 | `annotations` | object | what the creator passed at finish, e.g. `{"reward": 1.0}` |
 | `created_at`, `finished_at` | float or null | Unix seconds |
 | `tools` | object | tool-set hash → the tool list, as sent |

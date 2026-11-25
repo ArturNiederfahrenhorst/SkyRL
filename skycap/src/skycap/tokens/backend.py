@@ -23,7 +23,7 @@ import orjson
 from aiohttp import web
 
 from skycap import hashing, retry
-from skycap.dialects.base import CallRequest, Dialect, Turn, error_body
+from skycap.dialects.base import CallRequest, Dialect, DialectType, Turn, error_body
 from skycap.graph import CallInfo
 from skycap.tokens import turn
 from skycap.tokens.developer import fold_developer
@@ -91,6 +91,9 @@ class TokensBackend:
             "logprobs_mode": self.logprobs_mode,
             "sampling_overrides": self.sampling_overrides,
             "use_raw_content": self.use_raw_content,
+            "raw_content_dialects": [
+                dialect.value for dialect in DialectType if self.use_raw_content and dialect.get_dialect().raw_content
+            ],
         }
 
     async def start(self) -> None:
