@@ -24,6 +24,7 @@ from skyrl.integration.harbor.trial_metrics import (  # noqa: E402
     trial_metrics,
 )
 from skyrl.train.generators.base import TrajectoryID  # noqa: E402
+from skyrl.train.generators.utils import concatenate_generator_outputs  # noqa: E402
 
 pytestmark = pytest.mark.integrations
 
@@ -142,14 +143,14 @@ def attempt_at(tmp_path, name: str, trajectory: Any) -> TrialAttempts:
             {
                 "avg_agent_steps": 2.0,
                 "avg_tool_calls": 1.5,
-                "frac_attempts_without_tool_calls": 0.5,
+                "avg_attempts_without_tool_calls": 0.5,
                 "avg_patches_applied": 0.5,
                 "avg_patches_rejected": 0.5,
-                "patch_success_rate": 0.5,
+                "avg_patch_success_rate": 0.5,
             },
         ),
         # No apply_patch call (Terminus-2): no patch counts at all.
-        ([TERMINUS], {"avg_agent_steps": 1.0, "avg_tool_calls": 1.0, "frac_attempts_without_tool_calls": 0.0}),
+        ([TERMINUS], {"avg_agent_steps": 1.0, "avg_tool_calls": 1.0, "avg_attempts_without_tool_calls": 0.0}),
         # Nothing readable: no tool metrics.
         ([None], {}),
     ],
@@ -158,12 +159,36 @@ def attempt_at(tmp_path, name: str, trajectory: Any) -> TrialAttempts:
 def test_tool_use_is_counted_from_each_attempts_agent_trajectory(tmp_path, trajectories, expected) -> None:
     trials = [attempt_at(tmp_path, f"trial_{i}", t) for i, t in enumerate(trajectories)]
     metrics = trial_metrics(trials)
-    tool_keys = {
-        k for k in metrics if k.startswith(("generate/harbor/avg_", "generate/harbor/frac_", "generate/harbor/patch_"))
-    }
+    tool_keys = {k for k in metrics if k.startswith("generate/harbor/avg_")}
     assert tool_keys == {f"generate/harbor/{k}" for k in expected}
     for key, value in expected.items():
         assert metrics[f"generate/harbor/{key}"] == pytest.approx(value)
+
+
+def test_tool_metrics_are_averaged_when_generator_outputs_are_concatenated(tmp_path) -> None:
+    """Fully async training concatenates one generator output per prompt group, and eval one per batch:
+    every tool metric of the combined output is the mean of the outputs', never their sum."""
+    no_tool_keys = trial_metrics([attempt_at(tmp_path, "no_trajectory", None)])
+    first = trial_metrics([attempt_at(tmp_path, "codex", CODEX)])
+    second = trial_metrics(
+        [attempt_at(tmp_path, "applied", [agent_step(APPLIED)]), attempt_at(tmp_path, "silent", [agent_step()])]
+    )
+    output = {
+        "prompt_token_ids": [[1]],
+        "response_ids": [[1, 2]],
+        "rewards": [1.0],
+        "loss_masks": [[1, 1]],
+        "stop_reasons": ["stop"],
+        "rollout_logprobs": None,
+    }
+    merged = concatenate_generator_outputs(
+        [{**output, "rollout_metrics": first}, {**output, "rollout_metrics": second}]
+    )["rollout_metrics"]
+
+    tool_keys = set(first) - set(no_tool_keys)
+    assert tool_keys == set(second) - set(no_tool_keys) and len(tool_keys) == 6
+    for key in tool_keys:
+        assert merged[key] == pytest.approx((first[key] + second[key]) / 2), key
 
 
 class FakeTrial:

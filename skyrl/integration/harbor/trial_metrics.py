@@ -111,20 +111,22 @@ def trial_metrics(trials: Sequence[TrialAttempts]) -> Dict[str, Any]:
 
 def _tool_use_metrics(uses: List[ToolUse]) -> Dict[str, float]:
     """Averages over the attempts with a trajectory, masked and failed ones included; the patch counts only
-    when some attempt called ``apply_patch``."""
+    when some attempt called ``apply_patch``. Every key carries ``avg``, so ``concatenate_generator_outputs``
+    averages them across generator outputs (fully async training, eval in several batches) instead of summing."""
     if not uses:
         return {}
     metrics = {
         f"{PREFIX}/avg_agent_steps": float(np.mean([u.agent_steps for u in uses])),
         f"{PREFIX}/avg_tool_calls": float(np.mean([u.tool_calls for u in uses])),
-        f"{PREFIX}/frac_attempts_without_tool_calls": float(np.mean([u.tool_calls == 0 for u in uses])),
+        # The share of attempts that made no tool call.
+        f"{PREFIX}/avg_attempts_without_tool_calls": float(np.mean([u.tool_calls == 0 for u in uses])),
     }
     applied = sum(u.patches_applied for u in uses)
     rejected = sum(u.patches_rejected for u in uses)
     if applied + rejected:
         metrics[f"{PREFIX}/avg_patches_applied"] = applied / len(uses)
         metrics[f"{PREFIX}/avg_patches_rejected"] = rejected / len(uses)
-        metrics[f"{PREFIX}/patch_success_rate"] = applied / (applied + rejected)
+        metrics[f"{PREFIX}/avg_patch_success_rate"] = applied / (applied + rejected)
     return metrics
 
 
