@@ -3,6 +3,7 @@ server in token mode, which calls a mock SkyRL router."""
 
 import asyncio
 import re
+import threading
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -29,6 +30,7 @@ from skyrl.backends.skyrl_train.inference_servers.generate_wire import (
     pack_sample_support,  # noqa: E402
     pack_sample_support_logprobs,  # noqa: E402
 )
+from skyrl.integration.harbor import trial_metrics as trial_metrics_module  # noqa: E402
 from skyrl.integration.harbor.masking import (  # noqa: E402
     TIMEOUT_MASK_INSTANCE_FRACTION,
 )
@@ -646,6 +648,14 @@ async def test_with_r3_each_row_carries_routes_for_its_whole_prompt_and_response
     # A turn that extends the previous one asks only for the routes skycap doesn't hold yet.
     starts = [r["sampling_params"].get("routed_experts_prompt_start", 0) for r in router.requests]
     assert any(start > 0 for start in starts)
+
+
+@pytest.mark.asyncio
+async def test_the_agent_trajectory_is_read_off_the_event_loop(generator, trials, monkeypatch) -> None:
+    read_on = []
+    monkeypatch.setattr(trial_metrics_module, "read_tool_use", lambda trial_uri: read_on.append(threading.get_ident()))
+    await generator().generate(batch("linear"), disable_tqdm=True)
+    assert read_on and threading.get_ident() not in read_on
 
 
 @pytest.mark.asyncio

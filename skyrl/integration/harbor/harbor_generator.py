@@ -402,7 +402,8 @@ class HarborGenerator(GeneratorInterface):
 
                 async with self._rate_limiter:
                     results = await trial.run()
-                attempts.record(results)
+                # record() reads the attempt's trajectory file, so it runs off the event loop.
+                await asyncio.to_thread(attempts.record, results)
 
                 # Parse exception type
                 exc_type = results.exception_info.exception_type if results.exception_info else None

@@ -66,7 +66,8 @@ class TrialAttempts:
         """Harbor's phase times, exception and agent trajectory for the current attempt, from its ``TrialResult``.
 
         Harbor sets ``environment_setup.finished_at`` in a ``finally``, so an attempt whose
-        sandbox start timed out still has a duration.
+        sandbox start timed out still has a duration. It reads the attempt's ``agent/trajectory.json``, so a
+        generator calls it through ``asyncio.to_thread`` rather than on its event loop.
         """
         attempt = self.attempts[-1]
         for phase in PHASES:

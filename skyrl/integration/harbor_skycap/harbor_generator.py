@@ -299,7 +299,8 @@ class HarborSkycapGenerator(GeneratorInterface):
                 )
                 results = await (await Trial.create(TrialConfig.model_validate(config))).run()
 
-                attempts.record(results)
+                # record() reads the attempt's trajectory file, so it runs off the event loop.
+                await asyncio.to_thread(attempts.record, results)
                 exception = results.exception_info.exception_type if results.exception_info else None
                 if exception == "AgentTimeoutError":
                     # Not retried, as the sibling does; compose masks it, alone or with its instance.

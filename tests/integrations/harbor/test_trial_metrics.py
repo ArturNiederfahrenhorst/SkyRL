@@ -1,6 +1,7 @@
 """Harbor's per-attempt trial metrics, and the plain Harbor generator logging them without skycap."""
 
 import json
+import threading
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,7 @@ from examples.train_integrations.harbor.entrypoints.main_harbor import (  # noqa
     HARBOR_DEFAULT_CONFIG,
 )
 from skyrl.integration.harbor import harbor_generator  # noqa: E402
+from skyrl.integration.harbor import trial_metrics as trial_metrics_module  # noqa: E402
 from skyrl.integration.harbor.harbor_generator import (  # noqa: E402
     HarborGenerator,
 )
@@ -207,12 +209,9 @@ class FakeTrial:
         return self.scripts[self.path].pop(0)
 
 
-@pytest.mark.asyncio
-async def test_the_plain_harbor_generator_logs_a_start_timeout_rescued_by_a_retry(monkeypatch) -> None:
-    FakeTrial.scripts = {
-        "slow_start": [result("EnvironmentStartTimeoutError", environment_setup=timing(0, START_TIMEOUT)), completed()],
-        "linear": [completed()],
-    }
+def plain_generator(monkeypatch, scripts: dict) -> HarborGenerator:
+    """The plain Harbor generator on ``FakeTrial``, each task path's attempts returning ``scripts[path]`` in turn."""
+    FakeTrial.scripts = scripts
     monkeypatch.setattr(harbor_generator, "Trial", FakeTrial)
 
     async def finish_session(session_id: str) -> None:
@@ -231,7 +230,33 @@ async def test_the_plain_harbor_generator_logs_a_start_timeout_rescued_by_a_retr
     )
     with open(HARBOR_DEFAULT_CONFIG) as f:
         harbor_cfg = yaml.safe_load(f)
-    generator = HarborGenerator(cfg, harbor_cfg, client, tokenizer=None, max_seq_len=1024)
+    return HarborGenerator(cfg, harbor_cfg, client, tokenizer=None, max_seq_len=1024)
+
+
+@pytest.mark.asyncio
+async def test_the_plain_harbor_generator_reads_trajectories_off_its_event_loop(monkeypatch) -> None:
+    read_on = []
+    monkeypatch.setattr(trial_metrics_module, "read_tool_use", lambda trial_uri: read_on.append(threading.get_ident()))
+    generator = plain_generator(monkeypatch, {"linear": [completed()]})
+    await generator.generate(
+        {"prompts": ["linear"], "trajectory_ids": [TrajectoryID(instance_id="linear", repetition_id=0)]},
+        disable_tqdm=True,
+    )
+    assert read_on and threading.get_ident() not in read_on
+
+
+@pytest.mark.asyncio
+async def test_the_plain_harbor_generator_logs_a_start_timeout_rescued_by_a_retry(monkeypatch) -> None:
+    generator = plain_generator(
+        monkeypatch,
+        {
+            "slow_start": [
+                result("EnvironmentStartTimeoutError", environment_setup=timing(0, START_TIMEOUT)),
+                completed(),
+            ],
+            "linear": [completed()],
+        },
+    )
 
     out = await generator.generate(
         {
