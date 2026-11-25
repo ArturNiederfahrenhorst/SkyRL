@@ -19,6 +19,7 @@ from megatron.bridge import AutoBridge  # noqa: E402
 from transformers import (  # noqa: E402
     AutoConfig,
     DeepseekV3Config,
+    Exaone4Config,
     Glm4MoeConfig,
     GptOssConfig,
     LlamaConfig,
@@ -40,11 +41,11 @@ GPT_OSS_YARN = {
     "beta_slow": 1.0,
     "truncate": False,
     "original_max_position_embeddings": 4096,
-    "rope_theta": 150_000.0,
+    "rope_theta": 300_000.0,
 }
 LINEAR = {"rope_type": "linear", "factor": 2.0, "rope_theta": 1_000_000.0}
 # Megatron Core applies llama3 scaling with fixed low/high frequency factors and original length; only the factor
-# is free (Megatron-Bridge's llama_bridge.py rejects anything else).
+# is free (check_rope_override rejects anything else).
 LLAMA3 = {
     "rope_type": "llama3",
     "factor": 16.0,
@@ -89,6 +90,13 @@ def _glm4_moe():
     )  # fmt: skip
 
 
+def _exaone4():
+    return Exaone4Config(
+        num_attention_heads=4, num_key_value_heads=2, sliding_window=None, layer_types=["full_attention"] * 2,
+        architectures=["Exaone4ForCausalLM"], **_TINY,
+    )  # fmt: skip
+
+
 def _bridge(config, tmp_path):
     # The call init_configs makes; weights load lazily and to_megatron_provider(load_weights=False) never asks.
     config.save_pretrained(tmp_path)
@@ -106,6 +114,12 @@ def _bridge(config, tmp_path):
             id="qwen2-yarn-mscale-zero",
         ),
         pytest.param(_deepseek_v3, YARN_ALL_KEYS, None, id="deepseek-v3-mla-yarn-all-keys"),
+        pytest.param(
+            _deepseek_v3,
+            {**YARN, "partial_rotary_factor": 0.5},
+            "on a multi-latent-attention model",
+            id="deepseek-v3-mla-partial-rotary",
+        ),
         pytest.param(_gpt_oss, GPT_OSS_YARN, None, id="gpt-oss-yarn"),
         pytest.param(
             _gpt_oss,
@@ -129,7 +143,10 @@ def _bridge(config, tmp_path):
         pytest.param(_llama, LINEAR, None, id="llama-linear"),
         pytest.param(_llama, LLAMA3, None, id="llama-llama3"),
         pytest.param(
-            _llama, {**LLAMA3, "low_freq_factor": 2.0}, "Unsupported llama3 RoPE scaling values", id="llama3-unfixed"
+            _exaone4,
+            {**LLAMA3, "low_freq_factor": 2.0},
+            "but Megatron Core applies llama3 with",
+            id="exaone4-llama3-unfixed",
         ),
         pytest.param(
             _llama,

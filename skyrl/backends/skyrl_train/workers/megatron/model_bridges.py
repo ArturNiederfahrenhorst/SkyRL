@@ -251,7 +251,7 @@ except ImportError:
 
 
 # Per rope_type, each rope_parameters key Megatron-Bridge translates -> the provider field it sets (model_bridge.py:
-# 652-659, 782-783; llama_bridge.py:83-100). None: the bridge raises itself on any value Megatron Core cannot apply.
+# 652-659, 782-783; llama_bridge.py:83-100). None: no provider field; Megatron Core fixes the value (_LLAMA3_FIXED).
 # rope_theta -> rotary_base holds for every type; any other key would reach vLLM but not the Megatron model.
 _ROPE_FIELDS = {
     "default": {},
@@ -285,6 +285,8 @@ _MLA_YARN_FIELDS = {
 _COMMON_ROPE_FIELDS = {"rope_theta": "rotary_base", "partial_rotary_factor": "rotary_percent"}
 # The mode a rope_type needs on GPT providers, without which Megatron Core ignores the fields above.
 _GPT_ROPE_MODES = {"yarn": {"position_embedding_type": "yarn"}, "llama3": {"rope_scaling": True}}
+# The llama3 values Megatron Core applies whatever the config says (rotary_pos_embedding.py's _apply_scaling defaults).
+_LLAMA3_FIXED = {"low_freq_factor": 1.0, "high_freq_factor": 4.0, "original_max_position_embeddings": 8192}
 # Keys an override must name, and why.
 _REQUIRED_ROPE_KEYS = {
     "yarn": (
@@ -357,6 +359,20 @@ def _expected_rope_fields(provider, rope_parameters: dict) -> dict:
         raise ValueError(
             f"transformer_config_kwargs.rope_parameters with rope_type={rope_type!r} needs "
             f"{', '.join(repr(key) for key in missing)} ({reason})."
+        )
+    if rope_type == "llama3":
+        unfixed = {key: rope_parameters[key] for key, value in _LLAMA3_FIXED.items() if rope_parameters[key] != value}
+        if unfixed:
+            raise ValueError(
+                f"transformer_config_kwargs.rope_parameters with rope_type='llama3' sets {unfixed}, but Megatron Core "
+                f"applies llama3 with {_LLAMA3_FIXED} and only the factor is free, so the trainer and vLLM would use "
+                "different frequencies."
+            )
+    if mla and rope_parameters.get("partial_rotary_factor", 1.0) != 1.0:
+        raise ValueError(
+            f"transformer_config_kwargs.rope_parameters sets partial_rotary_factor="
+            f"{rope_parameters['partial_rotary_factor']} on a multi-latent-attention model: Megatron Core's MLA "
+            "rotates the whole RoPE head dimension, so the trainer and vLLM would use different positions."
         )
     rotary_percent = getattr(provider, "rotary_percent", 1.0)
     if rope_type == "yarn" and not mla and rotary_percent != 1.0:
