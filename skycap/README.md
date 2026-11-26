@@ -93,6 +93,17 @@ A `developer` message is folded into the leading `system` message when the
 tokenizer's chat template has no such role, as vLLM does, for either API. Each
 call records its API as `calls[].dialect`.
 
+Responses serves function tools and custom tools, whose input is one raw
+string (Codex's `apply_patch`). In token mode a custom tool is shown to the
+model with vLLM's shim, a function of one string parameter, `input`. A grammar
+on the tool is appended to its description as text and is not enforced while
+sampling. vLLM v0.33.0 refuses custom tools with a grammar, so a real vLLM
+Responses server can't serve Codex's `apply_patch`, and a prompt with one has
+no vLLM counterpart. The model's call goes back as a `custom_tool_call`, and
+arguments that aren't `{"input": "<text>"}` go back as they are, for the client
+to answer with its own error. Other tool types (`web_search`, namespaces) are
+refused.
+
 A reply cut off at its token limit goes back as the API defines it,
 `status: "incomplete"` with reason `max_output_tokens`, and is recorded with
 `finish_reason: "length"`. What a client does with it is the harness's
